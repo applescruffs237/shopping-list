@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Shopping List</title>
+
+  <script>
+    // Simple on-screen error overlay (helps debug iOS Safari blank-screen crashes)
+    (function () {
+      function show(msg) {
+        try {
+          var pre = document.getElementById('__err');
+          if (!pre) {
+            pre = document.createElement('pre');
+            pre.id = '__err';
+            pre.style.cssText = 'position:fixed;inset:0;z-index:999999;padding:16px;white-space:pre-wrap;background:#fff;color:#111;font:14px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;overflow:auto;';
+            document.documentElement.appendChild(pre);
+          }
+          pre.textContent = msg;
+        } catch (e) {}
+      }
+      window.addEventListener('error', function (e) {
+        show('JS Error:\n' + (e.message || e.error) + '\n' + (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || ''));
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e && e.reason;
+        show('Unhandled Promise Rejection:\n' + (r && (r.stack || r.message) ? (r.stack || r.message) : String(r)));
+      });
+    })();
+  </script>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { 
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+    }
+    body { 
+      margin: 0; 
+      padding: 0; 
+      overscroll-behavior: none;
+    }
+    #root {
+      width: 100vw;
+      height: 100vh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+    .modal-scroll {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    
+    // Simple icon components using SVG
+    const Plus = () => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+    );
+    
+    const X = ({ size = 20 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    );
+    
+    const Check = ({ size = 16 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    );
+    
+    const Trash2 = ({ size = 18 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+      </svg>
+    );
+
+    const ShoppingListApp = () => {
+  const hasLoadedRef = useRef(false);
+
+  const [meals, setMeals] = useState([]);
+  const [staples, setStaples] = useState([]);
+  const [quickAddStaples, setQuickAddStaples] = useState([]);
+  const [recipeLibrary, setRecipeLibrary] = useState({
+    "Ready made pasta": [
+      { name: "Fresh pasta", section: "Fridge" },
+      { name: "Pasta sauce", section: "Cupboard" }
+    ],
+    "Stew and dumplings": [
+      { name: "White onion x 1", section: "Produce" },
+      { name: "Carrots x 4", section: "Produce" },
+      { name: "Beef oxo stock cubes", section: "Cupboard" },
+      { name: "Garlic", section: "Produce" },
+      { name: "Frozen peas", section: "Freezer" },
+      { name: "Worcestershire sauce", section: "Cupboard" },
+      { name: "Suet", section: "Cupboard" },
+      { name: "Flour", section: "Cupboard" },
+      { name: "Beef braising steak", section: "Fridge" },
+      { name: "Potatoes", section: "Produce" }
+    ],
+    "Chicken Soup": [
+      { name: "Chicken breast x 2", section: "Fridge" },
+      { name: "Carrots", section: "Produce" },
+      { name: "Celery", section: "Produce" },
+      { name: "Garlic", section: "Produce" },
+      { name: "White onion x 2", section: "Produce" },
+      { name: "Chicken stock cubes", section: "Cupboard" },
+      { name: "Herb de Provence", section: "Cupboard" },
+      { name: "Frozen peas", section: "Freezer" },
+      { name: "Brown rice", section: "Cupboard" }
+    ],
+    "Chorizo bean stew": [
+      { name: "Chorizo ring", section: "Fridge" },
+      { name: "Garlic", section: "Produce" },
+      { name: "White onion x 2", section: "Produce" },
+      { name: "Tinned tomatoes", section: "Cupboard" },
+      { name: "Butter beans", section: "Cupboard" },
+      { name: "Cannellini beans", section: "Cupboard" },
+      { name: "Chicken stock cubes", section: "Cupboard" },
+      { name: "Lemon", section: "Produce" },
+      { name: "Feta cheese", section: "Fridge" },
+      { name: "Bulgar wheat", section: "Cupboard" },
+      { name: "Thyme", section: "Produce" }
+    ],
+    "Roast sausage w/peppers + veg": [
+      { name: "Sausages", section: "Fridge" },
+      { name: "Red onion", section: "Produce" },
+      { name: "Red peppers x2", section: "Produce" },
+      { name: "Garlic", section: "Produce" },
+      { name: "New potatoes", section: "Produce" },
+      { name: "Sweetcorn", section: "Cupboard" },
+      { name: "Tomatoes", section: "Produce" }
+    ],
+    "Pie & mash": [
+      { name: "Pies", section: "Fridge" },
+      { name: "Potatoes", section: "Produce" },
+      { name: "Gravy", section: "Cupboard" },
+      { name: "Broccoli", section: "Produce" }
+    ],
+    "Gnocchi salad": [
+      { name: "Gnocchi", section: "Fridge" },
+      { name: "Fresh pesto", section: "Fridge" }
+    ],
+    "Falafels": [
+      { name: "Wraps", section: "Bakery" },
+      { name: "Falafels", section: "Fridge" },
+      { name: "Tomatoes", section: "Produce" },
+      { name: "Red onion", section: "Produce" },
+      { name: "Red pepper", section: "Produce" },
+      { name: "Hummus", section: "Fridge" },
+      { name: "Halloumi", section: "Fridge" }
+    ],
+    "Chilli con carne": [
+      { name: "Beef mince", section: "Fridge" },
+      { name: "White onion", section: "Produce" },
+      { name: "Chilli spice mix", section: "Cupboard" },
+      { name: "Red kidney beans", section: "Cupboard" },
+      { name: "Tinned tomatoes", section: "Cupboard" },
+      { name: "Garlic", section: "Produce" },
+      { name: "Basmati rice", section: "Cupboard" }
+    ],
+    "Carbonara": [
+      { name: "Pancetta", section: "Fridge" },
+      { name: "Garlic", section: "Produce" },
+      { name: "Spaghetti", section: "Cupboard" },
+      { name: "Eggs", section: "Bakery" }
+    ],
+    "Pizza": [
+      { name: "Pizza", section: "Freezer" }
+    ],
+    "Thai curry": [
+      { name: "Thai curry pouch", section: "Cupboard" },
+      { name: "Mange tout", section: "Produce" },
+      { name: "Chicken breast", section: "Fridge" },
+      { name: "Basmati rice", section: "Cupboard" }
+    ],
+    "Lasagna": [
+      { name: "Beef mince", section: "Fridge" },
+      { name: "White onion", section: "Produce" },
+      { name: "Carrots x 2", section: "Produce" },
+      { name: "Celery", section: "Produce" },
+      { name: "Passata", section: "Cupboard" },
+      { name: "Red wine", section: "Alcohol" },
+      { name: "Lasagna sheets", section: "Cupboard" },
+      { name: "Béchamel sauce", section: "Cupboard" }
+    ],
+    "Sausage fennel pasta": [
+      { name: "Sausages", section: "Fridge" },
+      { name: "Fennel seeds", section: "Cupboard" },
+      { name: "White onion", section: "Produce" },
+      { name: "Garlic", section: "Produce" },
+      { name: "Tinned tomatoes", section: "Cupboard" },
+      { name: "Chicken stock cubes", section: "Cupboard" },
+      { name: "Rigatoni pasta", section: "Cupboard" },
+      { name: "Flat leaf parsley", section: "Produce" }
+    ],
+    "Moroccan chicken soup": [
+      { name: "Chicken breast x 2", section: "Fridge" },
+      { name: "White onion", section: "Produce" },
+      { name: "Frozen stewing vegetables", section: "Freezer" },
+      { name: "Ground cumin", section: "Cupboard" },
+      { name: "Ground coriander", section: "Cupboard" },
+      { name: "Turmeric", section: "Cupboard" },
+      { name: "Smoked paprika", section: "Cupboard" },
+      { name: "Garlic", section: "Produce" },
+      { name: "Chicken stock", section: "Cupboard" },
+      { name: "Tinned tomatoes", section: "Cupboard" },
+      { name: "Red lentils", section: "Cupboard" }
+    ],
+    "Roast chicken": [
+      { name: "Whole chicken", section: "Fridge" },
+      { name: "White onion", section: "Produce" },
+      { name: "Lemon", section: "Produce" },
+      { name: "Thyme", section: "Produce" },
+      { name: "Carrots", section: "Produce" },
+      { name: "Parsnips", section: "Produce" },
+      { name: "Paxo stuffing", section: "Cupboard" },
+      { name: "Gravy", section: "Cupboard" },
+      { name: "Yorkshire puddings", section: "Freezer" },
+      { name: "Potatoes", section: "Produce" },
+      { name: "Broccoli", section: "Produce" }
+    ]
+  });
+  const [newMeal, setNewMeal] = useState('');
+  const [newIngredient, setNewIngredient] = useState('');
+  const [newStaple, setNewStaple] = useState('');
+  const [selectedSection, setSelectedSection] = useState('');
+  const [activeTab, setActiveTab] = useState('plan');
+  const [showRecipeModal, setShowRecipeModal] = useState(false);
+  const [showQuickAddManager, setShowQuickAddManager] = useState(false);
+  const [showRecipeManager, setShowRecipeManager] = useState(false);
+  const [editingRecipe, setEditingRecipe] = useState(null);
+  const [newRecipeName, setNewRecipeName] = useState('');
+  const [newRecipeIngredients, setNewRecipeIngredients] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const sections = ['Produce', 'Fridge', 'Cleaning', 'Baby', 'Cupboard', 'Alcohol', 'Bathroom', 'Pharmacy', 'Bakery', 'Freezer', 'Other'];
+
+  // Color coding for sections - accessible colors with good contrast
+  const getSectionColor = (section) => {
+    const colors = {
+      'Produce': 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200',
+      'Fridge': 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200',
+      'Cleaning': 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200',
+      'Baby': 'bg-pink-100 text-pink-800 border-pink-300 hover:bg-pink-200',
+      'Cupboard': 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200',
+      'Alcohol': 'bg-red-100 text-red-800 border-red-300 hover:bg-red-200',
+      'Bathroom': 'bg-cyan-100 text-cyan-800 border-cyan-300 hover:bg-cyan-200',
+      'Pharmacy': 'bg-teal-100 text-teal-800 border-teal-300 hover:bg-teal-200',
+      'Bakery': 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200',
+      'Freezer': 'bg-sky-100 text-sky-800 border-sky-300 hover:bg-sky-200',
+      'Other': 'bg-gray-100 text-gray-800 border-gray-300 hover:bg-gray-200'
+    };
+    return colors[section] || colors['Other'];
+  };
+
+  const getSectionColorDisabled = (section) => {
+    const colors = {
+      'Produce': 'bg-green-50 text-green-400 border-green-200',
+      'Fridge': 'bg-blue-50 text-blue-400 border-blue-200',
+      'Cleaning': 'bg-purple-50 text-purple-400 border-purple-200',
+      'Baby': 'bg-pink-50 text-pink-400 border-pink-200',
+      'Cupboard': 'bg-amber-50 text-amber-400 border-amber-200',
+      'Alcohol': 'bg-red-50 text-red-400 border-red-200',
+      'Bathroom': 'bg-cyan-50 text-cyan-400 border-cyan-200',
+      'Pharmacy': 'bg-teal-50 text-teal-400 border-teal-200',
+      'Bakery': 'bg-orange-50 text-orange-400 border-orange-200',
+      'Freezer': 'bg-sky-50 text-sky-400 border-sky-200',
+      'Other': 'bg-gray-50 text-gray-400 border-gray-200'
+    };
+    return colors[section] || colors['Other'];
+  };
+
+  // Load data from storage (robust on iOS Safari)
+  useEffect(() => {
+    const loadData = () => {
+      try {
+        const mealsRaw = localStorage.getItem('shopping-meals');
+        const staplesRaw = localStorage.getItem('shopping-staples');
+        const quickAddRaw = localStorage.getItem('shopping-quick-add');
+        const recipesRaw = localStorage.getItem('shopping-recipes');
+
+        if (mealsRaw) setMeals(JSON.parse(mealsRaw));
+        if (staplesRaw) setStaples(JSON.parse(staplesRaw));
+        if (quickAddRaw) setQuickAddStaples(JSON.parse(quickAddRaw));
+        if (recipesRaw) setRecipeLibrary(JSON.parse(recipesRaw));
+      } catch (error) {
+        console.log('Starting fresh - no saved data');
+      } finally {
+        hasLoadedRef.current = true;
+      }
+    };
+    loadData();
+  }, []);
+
+  
+  
+  // Robust autosave: persist whenever state changes (after initial load)
+  const safeSet = async (key, value) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {
+      console.error('Storage set failed:', key, e);
+    }
+  };
+
+  useEffect(() => {
+    if (!hasLoadedRef.current) return;
+    (async () => safeSet('shopping-meals', JSON.stringify(meals)))();
+  }, [meals]);
+
+  useEffect(() => {
+    if (!hasLoadedRef.current) return;
+    (async () => safeSet('shopping-staples', JSON.stringify(staples)))();
+  }, [staples]);
+
+  useEffect(() => {
+    if (!hasLoadedRef.current) return;
+    (async () => safeSet('shopping-quick-add', JSON.stringify(quickAddStaples)))();
+  }, [quickAddStaples]);
+
+  useEffect(() => {
+    if (!hasLoadedRef.current) return;
+    (async () => safeSet('shopping-recipes', JSON.stringify(recipeLibrary)))();
+  }, [recipeLibrary]);
+
+  // Save data to storage (robust on iOS Safari)
+  const saveData = (mealsData, staplesData, quickAddData = quickAddStaples) => {
+    try {
+      localStorage.setItem('shopping-meals', JSON.stringify(mealsData));
+      localStorage.setItem('shopping-staples', JSON.stringify(staplesData));
+      localStorage.setItem('shopping-quick-add', JSON.stringify(quickAddData));
+    } catch (error) {
+      console.error('Error saving data:', error);
+    }
+  };
+
+  const addMeal = () => {
+    if (newMeal.trim()) {
+      const updatedMeals = [...meals, { id: Date.now(), name: newMeal, ingredients: [] }];
+      setMeals(updatedMeals);
+      saveData(updatedMeals, staples);
+      setNewMeal('');
+    }
+  };
+
+  const addMealFromRecipe = (recipeName) => {
+    const recipe = recipeLibrary[recipeName];
+    if (recipe) {
+      const newMealObj = {
+        id: Date.now(),
+        name: recipeName,
+        ingredients: recipe.map(ing => ({
+          id: Date.now() + Math.random(),
+          name: ing.name,
+          section: ing.section,
+          checked: false
+        }))
+      };
+      const updatedMeals = [...meals, newMealObj];
+      setMeals(updatedMeals);
+      saveData(updatedMeals, staples);
+      setShowRecipeModal(false);
+      setSearchQuery('');
+    }
+  };
+
+  const addIngredient = (mealId) => {
+    if (newIngredient.trim() && selectedSection) {
+      const updatedMeals = meals.map(meal =>
+        meal.id === mealId
+          ? {
+              ...meal,
+              ingredients: [...meal.ingredients, {
+                id: Date.now(),
+                name: newIngredient,
+                section: selectedSection,
+                checked: false
+              }]
+            }
+          : meal
+      );
+      setMeals(updatedMeals);
+      saveData(updatedMeals, staples);
+      setNewIngredient('');
+      setSelectedSection('');
+    }
+  };
+
+  const addStaple = () => {
+    if (newStaple.trim() && selectedSection) {
+      const updatedStaples = [...staples, {
+        id: Date.now(),
+        name: newStaple,
+        section: selectedSection,
+        checked: false
+      }];
+      setStaples(updatedStaples);
+      
+      // Add to quick add list if not already there
+      const existingQuickAdd = quickAddStaples.find(
+        item => item.name.toLowerCase() === newStaple.trim().toLowerCase() && item.section === selectedSection
+      );
+      
+      let updatedQuickAdd = quickAddStaples;
+      if (!existingQuickAdd) {
+        updatedQuickAdd = [...quickAddStaples, {
+          id: Date.now() + Math.random(),
+          name: newStaple.trim(),
+          section: selectedSection
+        }];
+        setQuickAddStaples(updatedQuickAdd);
+      }
+      
+      saveData(meals, updatedStaples, updatedQuickAdd);
+      setNewStaple('');
+      setSelectedSection('');
+    }
+  };
+
+  const addQuickStaple = (quickItem) => {
+    const updatedStaples = [...staples, {
+      id: Date.now(),
+      name: quickItem.name,
+      section: quickItem.section,
+      checked: false
+    }];
+    setStaples(updatedStaples);
+    saveData(meals, updatedStaples);
+  };
+
+  const removeFromQuickAdd = (quickItemId) => {
+    const updatedQuickAdd = quickAddStaples.filter(item => item.id !== quickItemId);
+    setQuickAddStaples(updatedQuickAdd);
+    saveData(meals, staples, updatedQuickAdd);
+  };
+
+  const saveRecipeLibrary = async (updatedLibrary) => {
+    try {
+      await window.storage.set('shopping-recipes', JSON.stringify(updatedLibrary));
+    } catch (error) {
+      console.error('Error saving recipes:', error);
+    }
+  };
+
+  const startEditingRecipe = (recipeName) => {
+    setEditingRecipe(recipeName);
+    setNewRecipeName(recipeName);
+    setNewRecipeIngredients(recipeLibrary[recipeName] || []);
+  };
+
+  const startNewRecipe = () => {
+    setEditingRecipe('new');
+    setNewRecipeName('');
+    setNewRecipeIngredients([]);
+  };
+
+  const saveRecipe = () => {
+    if (!newRecipeName.trim() || newRecipeIngredients.length === 0) return;
+
+    const updatedLibrary = { ...recipeLibrary };
+    
+    // If editing existing recipe with name change, delete old one
+    if (editingRecipe !== 'new' && editingRecipe !== newRecipeName) {
+      delete updatedLibrary[editingRecipe];
+    }
+    
+    updatedLibrary[newRecipeName] = newRecipeIngredients;
+    setRecipeLibrary(updatedLibrary);
+    saveRecipeLibrary(updatedLibrary);
+    setEditingRecipe(null);
+    setNewRecipeName('');
+    setNewRecipeIngredients([]);
+  };
+
+  const deleteRecipe = (recipeName) => {
+    const updatedLibrary = { ...recipeLibrary };
+    delete updatedLibrary[recipeName];
+    setRecipeLibrary(updatedLibrary);
+    saveRecipeLibrary(updatedLibrary);
+  };
+
+  const addIngredientToRecipe = (ingredientName, section) => {
+    if (!ingredientName.trim() || !section) return;
+    
+    setNewRecipeIngredients([
+      ...newRecipeIngredients,
+      { name: ingredientName.trim(), section }
+    ]);
+  };
+
+  const removeIngredientFromRecipe = (index) => {
+    setNewRecipeIngredients(newRecipeIngredients.filter((_, i) => i !== index));
+  };
+
+  const deleteMeal = (mealId) => {
+    const updatedMeals = meals.filter(meal => meal.id !== mealId);
+    setMeals(updatedMeals);
+    saveData(updatedMeals, staples);
+  };
+
+  const deleteIngredient = (mealId, ingredientId) => {
+    const updatedMeals = meals.map(meal =>
+      meal.id === mealId
+        ? { ...meal, ingredients: meal.ingredients.filter(ing => ing.id !== ingredientId) }
+        : meal
+    );
+    setMeals(updatedMeals);
+    saveData(updatedMeals, staples);
+  };
+
+  const deleteStaple = (stapleId) => {
+    const updatedStaples = staples.filter(staple => staple.id !== stapleId);
+    setStaples(updatedStaples);
+    saveData(meals, updatedStaples);
+  };
+
+  const toggleIngredient = (mealId, ingredientId) => {
+    const updatedMeals = meals.map(meal =>
+      meal.id === mealId
+        ? {
+            ...meal,
+            ingredients: meal.ingredients.map(ing =>
+              ing.id === ingredientId ? { ...ing, checked: !ing.checked } : ing
+            )
+          }
+        : meal
+    );
+    setMeals(updatedMeals);
+    saveData(updatedMeals, staples);
+  };
+
+  const toggleStaple = (stapleId) => {
+    const updatedStaples = staples.map(staple =>
+      staple.id === stapleId ? { ...staple, checked: !staple.checked } : staple
+    );
+    setStaples(updatedStaples);
+    saveData(meals, updatedStaples);
+  };
+
+  const toggleItem = (item) => {
+    // Toggle all original instances of this item
+    item.originalIds.forEach(id => {
+      const meal = meals.find(m => m.ingredients.some(ing => ing.id === id));
+      if (meal) {
+        toggleIngredient(meal.id, id);
+      } else {
+        const staple = staples.find(s => s.id === id);
+        if (staple) {
+          toggleStaple(id);
+        }
+      }
+    });
+  };
+
+  const getAllItems = () => {
+    const allIngredients = meals.flatMap(meal => 
+      meal.ingredients.map(ing => ({ ...ing, mealName: meal.name }))
+    );
+    const allItems = [...allIngredients, ...staples];
+    
+    // Deduplicate and track which meals need each ingredient
+    const itemMap = new Map();
+    
+    allItems.forEach(item => {
+      // Remove quantity markers like "x 2" for grouping purposes
+      const baseName = item.name.replace(/\s*x\s*\d+/i, '').trim();
+      const key = `${baseName}-${item.section}`;
+      
+      if (itemMap.has(key)) {
+        const existing = itemMap.get(key);
+        existing.originalIds.push(item.id);
+        // Add meal name if this is from a meal (not a staple)
+        if (item.mealName && !existing.mealNames.includes(item.mealName)) {
+          existing.mealNames.push(item.mealName);
+        }
+      } else {
+        itemMap.set(key, {
+          ...item,
+          baseName,
+          originalIds: [item.id],
+          mealNames: item.mealName ? [item.mealName] : []
+        });
+      }
+    });
+    
+    return Array.from(itemMap.values()).map(item => {
+      let displayName = item.baseName;
+      
+      // Only show meal names if this ingredient is used in MORE THAN ONE meal
+      if (item.mealNames.length > 1) {
+        displayName = `${item.baseName} (${item.mealNames.join(', ')})`;
+      }
+      
+      return {
+        ...item,
+        name: displayName
+      };
+    });
+  };
+
+  const getItemsBySection = () => {
+    const allItems = getAllItems();
+    const grouped = {};
+    sections.forEach(section => {
+      grouped[section] = allItems.filter(item => item.section === section);
+    });
+    return grouped;
+  };
+
+  const clearChecked = () => {
+    // Manual clear only – never wipe meal structure
+    const updatedMeals = meals.map(meal => ({
+      ...meal,
+      ingredients: meal.ingredients.filter(ing => !ing.checked)
+    }));
+    const updatedStaples = staples.filter(staple => !staple.checked);
+    setMeals(updatedMeals);
+    setStaples(updatedStaples);
+    saveData(updatedMeals, updatedStaples);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col overflow-x-hidden">
+      <div className="max-w-5xl mx-auto w-full flex flex-col min-h-screen">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-40 flex-shrink-0">
+          <div className="px-4 sm:px-6 py-4">
+            <h1 className="text-2xl font-normal text-gray-900">Shopping List</h1>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex px-4 sm:px-6 border-t border-gray-100">
+            <button
+              onClick={() => setActiveTab('plan')}
+              className={`relative px-6 py-3 text-sm font-medium transition-colors ${
+                activeTab === 'plan'
+                  ? 'text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Plan
+              {activeTab === 'plan' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full"></div>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('shop')}
+              className={`relative px-6 py-3 text-sm font-medium transition-colors ${
+                activeTab === 'shop'
+                  ? 'text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Shop
+              {activeTab === 'shop' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full"></div>
+              )}
+            </button>
+          </div>
+        </div>
+
+        <div className="px-4 sm:px-6 py-6 overflow-y-auto overflow-x-hidden flex-1">
+          {activeTab === 'plan' && (
+            <div className="space-y-8 pb-8">
+              {/* Meals Section */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-normal text-gray-900">This week's meals</h2>
+                  <button
+                    onClick={() => setShowRecipeManager(true)}
+                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Manage recipes
+                  </button>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                  <button
+                    onClick={() => setShowRecipeModal(true)}
+                    className="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-full hover:bg-blue-700 hover:shadow-md transition-all flex items-center justify-center gap-2 whitespace-nowrap"
+                  >
+                    <Plus size={18} />
+                    Add from recipes
+                  </button>
+                  <div className="flex gap-2 flex-1">
+                    <input
+                      type="text"
+                      value={newMeal}
+                      onChange={(e) => setNewMeal(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && addMeal()}
+                      placeholder="Add custom meal"
+                      className="flex-1 min-w-0 px-4 py-2.5 text-base border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                    />
+                    <button
+                      onClick={addMeal}
+                      className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-full hover:bg-gray-50 hover:shadow-sm transition-all flex-shrink-0"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {meals.map(meal => (
+                    <div key={meal.id} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                      <div className="px-4 sm:px-6 py-4 flex justify-between items-center border-b border-gray-100">
+                        <h3 className="text-base font-medium text-gray-900 break-words pr-2">{meal.name}</h3>
+                        <button
+                          onClick={() => deleteMeal(meal.id)}
+                          className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-red-50"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+
+                      <div className="px-4 sm:px-6 py-4 space-y-2">
+                        {meal.ingredients.map(ing => (
+                          <div key={ing.id} className="flex items-center gap-3 py-1 flex-wrap sm:flex-nowrap">
+                            <span className="flex-1 text-sm text-gray-700 min-w-0 break-words">{ing.name}</span>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full whitespace-nowrap">
+                                {ing.section}
+                              </span>
+                              <button
+                                onClick={() => deleteIngredient(meal.id, ing.id)}
+                                className="text-gray-400 hover:text-red-600 transition-colors"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+
+                        <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                          <input
+                            type="text"
+                            value={newIngredient}
+                            onChange={(e) => setNewIngredient(e.target.value)}
+                            placeholder="Add ingredient"
+                            className="flex-1 min-w-0 px-4 py-2 text-sm border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                          />
+                          <div className="flex gap-2">
+                            <select
+                              value={selectedSection}
+                              onChange={(e) => setSelectedSection(e.target.value)}
+                              className="flex-1 sm:flex-none px-4 py-2 text-sm border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent bg-white"
+                            >
+                              <option value="">Section</option>
+                              {sections.map(section => (
+                                <option key={section} value={section}>{section}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => addIngredient(meal.id)}
+                              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0"
+                            >
+                              <Plus size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Staples Section */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-normal text-gray-900">Staples</h2>
+                  {quickAddStaples.length > 0 && (
+                    <button
+                      onClick={() => setShowQuickAddManager(true)}
+                      className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      Manage quick add
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick Add Buttons */}
+                {quickAddStaples.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-600 mb-2">Quick add:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {quickAddStaples.map(item => {
+                        const isAlreadyAdded = staples.some(
+                          s => s.name.toLowerCase() === item.name.toLowerCase() && 
+                               s.section === item.section && 
+                               !s.checked
+                        );
+                        
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => !isAlreadyAdded && addQuickStaple(item)}
+                            disabled={isAlreadyAdded}
+                            className={`px-4 py-2 text-sm font-medium rounded-full transition-all border ${
+                              isAlreadyAdded 
+                                ? `${getSectionColorDisabled(item.section)} cursor-not-allowed opacity-60`
+                                : getSectionColor(item.section)
+                            }`}
+                          >
+                            {item.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                  <input
+                    type="text"
+                    value={newStaple}
+                    onChange={(e) => setNewStaple(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && addStaple()}
+                    placeholder="Add staple item"
+                    className="flex-1 min-w-0 px-4 py-2.5 text-base border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedSection}
+                      onChange={(e) => setSelectedSection(e.target.value)}
+                      className="flex-1 sm:flex-none px-4 py-2.5 text-base border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent bg-white"
+                    >
+                      <option value="">Section</option>
+                      {sections.map(section => (
+                        <option key={section} value={section}>{section}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={addStaple}
+                      className="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-full hover:bg-blue-700 hover:shadow-md transition-all flex items-center gap-2 flex-shrink-0"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {staples.map(staple => (
+                    <div key={staple.id} className="flex items-center gap-3 bg-white px-4 sm:px-6 py-3 rounded-full border border-gray-200 hover:shadow-sm transition-shadow flex-wrap sm:flex-nowrap">
+                      <span className="flex-1 text-sm text-gray-700 min-w-0 break-words">{staple.name}</span>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full whitespace-nowrap">
+                          {staple.section}
+                        </span>
+                        <button
+                          onClick={() => deleteStaple(staple.id)}
+                          className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-red-50"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'shop' && (
+            <div className="pb-8">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-normal text-gray-900">Shopping list</h2>
+                <button
+                  onClick={clearChecked}
+                  className="px-4 py-2 text-sm font-medium text-red-600 rounded-full hover:bg-red-50 transition-colors"
+                >
+                  Clear checked
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {Object.entries(getItemsBySection()).map(([section, items]) => (
+                  items.length > 0 && (
+                    <div key={section}>
+                      <div className="flex items-center gap-2 mb-3 px-2">
+                        <h3 className="text-sm font-medium text-gray-900 uppercase tracking-wide">
+                          {section}
+                        </h3>
+                        <div className="h-px flex-1 bg-gray-200"></div>
+                        <span className="text-xs text-gray-500">{items.length}</span>
+                      </div>
+                      <div className="space-y-2">
+                        {items.map(item => {
+                          const allChecked = item.originalIds.every(id => {
+                            const mealWithItem = meals.find(m => m.ingredients.some(ing => ing.id === id));
+                            if (mealWithItem) {
+                              const ingredient = mealWithItem.ingredients.find(ing => ing.id === id);
+                              return ingredient?.checked;
+                            }
+                            const staple = staples.find(s => s.id === id);
+                            return staple?.checked;
+                          });
+
+                          return (
+                            <button
+                              key={item.originalIds.join('-')}
+                              onClick={() => toggleItem(item)}
+                              className={`w-full flex items-center gap-4 px-4 sm:px-6 py-4 rounded-2xl transition-all ${
+                                allChecked
+                                  ? 'bg-white border border-gray-200'
+                                  : 'bg-white border border-gray-200 hover:shadow-md'
+                              }`}
+                            >
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                                allChecked
+                                  ? 'bg-blue-600 border-blue-600'
+                                  : 'border-gray-300'
+                              }`}>
+                                {allChecked && <Check size={14} className="text-white" strokeWidth={3} />}
+                              </div>
+                              <span className={`flex-1 text-left text-base transition-all break-words ${
+                                allChecked ? 'line-through text-gray-400' : 'text-gray-900'
+                              }`}>
+                                {item.name}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )
+                ))}
+              </div>
+
+              {getAllItems().length === 0 && (
+                <div className="text-center py-16">
+                  <div className="text-gray-400 mb-3">
+                    <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                  </div>
+                  <p className="text-base text-gray-900 mb-1">Your list is empty</p>
+                  <p className="text-sm text-gray-500">Add meals and staples in the Plan tab</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Recipe Library Modal */}
+        {showRecipeModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-end sm:items-center justify-center z-50 backdrop-blur-sm">
+            <div className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-2xl h-[90vh] sm:max-h-[90vh] flex flex-col overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-200 flex-shrink-0">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-normal text-gray-900">Recipe library</h2>
+                  <button
+                    onClick={() => {
+                      setShowRecipeModal(false);
+                      setSearchQuery('');
+                    }}
+                    className="text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-full hover:bg-gray-100 -mr-2"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search recipes"
+                  className="w-full px-4 py-2.5 text-base border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                />
+              </div>
+              <div className="p-4 sm:p-6 pb-safe overflow-y-auto flex-1 overscroll-contain modal-scroll">
+                <div className="space-y-2 pb-8">
+                  {Object.keys(recipeLibrary)
+                    .filter(recipe => 
+                      recipe.toLowerCase().includes(searchQuery.toLowerCase())
+                    )
+                    .sort()
+                    .map(recipeName => (
+                      <button
+                        key={recipeName}
+                        onClick={() => addMealFromRecipe(recipeName)}
+                        className="w-full text-left px-6 py-4 bg-white hover:bg-gray-50 rounded-2xl transition-all border border-gray-200 hover:border-gray-300 hover:shadow-sm group"
+                      >
+                        <div className="flex justify-between items-center">
+                          <div className="flex-1">
+                            <h3 className="font-medium text-gray-900 text-base">
+                              {recipeName}
+                            </h3>
+                            <p className="text-sm text-gray-500 mt-0.5">
+                              {recipeLibrary[recipeName].length} ingredients
+                            </p>
+                          </div>
+                          <Plus className="text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" size={20} />
+                        </div>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quick Add Manager Modal */}
+        {showQuickAddManager && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-normal text-gray-900">Manage quick add items</h2>
+                  <button
+                    onClick={() => setShowQuickAddManager(false)}
+                    className="text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-full hover:bg-gray-100"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <p className="text-sm text-gray-500 mt-2">Remove items you no longer need for quick access</p>
+              </div>
+              <div className="p-6 overflow-y-auto max-h-[calc(85vh-140px)] modal-scroll">
+                {quickAddStaples.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <p className="text-sm">No quick add items yet</p>
+                    <p className="text-xs mt-1">Items you add to staples will appear here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {quickAddStaples.map(item => (
+                      <div key={item.id} className="flex items-center gap-3 bg-gray-50 px-4 py-3 rounded-2xl">
+                        <span className="flex-1 text-sm text-gray-900">{item.name}</span>
+                        <span className="text-xs text-gray-500 bg-white px-3 py-1 rounded-full">
+                          {item.section}
+                        </span>
+                        <button
+                          onClick={() => removeFromQuickAdd(item.id)}
+                          className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-red-50"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Recipe Manager Modal */}
+        {showRecipeManager && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-end sm:items-center justify-center z-50 backdrop-blur-sm">
+            <div className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-4xl h-[90vh] sm:max-h-[90vh] flex flex-col overflow-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-200 flex-shrink-0">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-normal text-gray-900">
+                    {editingRecipe ? (editingRecipe === 'new' ? 'Add new recipe' : 'Edit recipe') : 'Manage recipes'}
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setShowRecipeManager(false);
+                      setEditingRecipe(null);
+                      setNewRecipeName('');
+                      setNewRecipeIngredients([]);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-full hover:bg-gray-100 -mr-2"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+              </div>
+
+              {editingRecipe ? (
+                // Edit/Create Recipe View
+                <div className="p-4 sm:p-6 pb-safe overflow-y-auto flex-1 overscroll-contain modal-scroll">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Recipe name</label>
+                      <input
+                        type="text"
+                        value={newRecipeName}
+                        onChange={(e) => setNewRecipeName(e.target.value)}
+                        placeholder="e.g., Spaghetti Carbonara"
+                        className="w-full px-4 py-2.5 text-base border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Ingredients</label>
+                      
+                      {/* Existing ingredients */}
+                      <div className="space-y-2 mb-3">
+                        {newRecipeIngredients.map((ing, index) => (
+                          <div key={index} className="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-full">
+                            <span className="flex-1 text-sm text-gray-900">{ing.name}</span>
+                            <span className="text-xs text-gray-500 bg-white px-3 py-1 rounded-full">
+                              {ing.section}
+                            </span>
+                            <button
+                              onClick={() => removeIngredientFromRecipe(index)}
+                              className="text-gray-400 hover:text-red-600 transition-colors"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Add new ingredient */}
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          id="new-recipe-ingredient"
+                          placeholder="Ingredient name"
+                          className="flex-1 min-w-0 px-4 py-2 text-sm border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              const input = e.target;
+                              const section = document.getElementById('new-recipe-section').value;
+                              if (input.value.trim() && section) {
+                                addIngredientToRecipe(input.value, section);
+                                input.value = '';
+                                document.getElementById('new-recipe-section').value = '';
+                              }
+                            }
+                          }}
+                        />
+                        <div className="flex gap-2">
+                          <select
+                            id="new-recipe-section"
+                            className="flex-1 sm:flex-none px-4 py-2 text-sm border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent bg-white"
+                          >
+                            <option value="">Section</option>
+                            {sections.map(section => (
+                              <option key={section} value={section}>{section}</option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => {
+                              const input = document.getElementById('new-recipe-ingredient');
+                              const section = document.getElementById('new-recipe-section').value;
+                              if (input.value.trim() && section) {
+                                addIngredientToRecipe(input.value, section);
+                                input.value = '';
+                                document.getElementById('new-recipe-section').value = '';
+                              }
+                            }}
+                            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0"
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-4">
+                      <button
+                        onClick={() => {
+                          setEditingRecipe(null);
+                          setNewRecipeName('');
+                          setNewRecipeIngredients([]);
+                        }}
+                        className="px-6 py-2.5 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={saveRecipe}
+                        className="flex-1 px-6 py-2.5 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors"
+                      >
+                        Save recipe
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // Recipe List View
+                <div className="p-4 sm:p-6 pb-safe overflow-y-auto flex-1 overscroll-contain modal-scroll">
+                  <button
+                    onClick={startNewRecipe}
+                    className="w-full mb-4 px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Plus size={20} />
+                    Add new recipe
+                  </button>
+
+                  <div className="space-y-2 pb-8">
+                    {Object.keys(recipeLibrary).sort().map(recipeName => (
+                      <div key={recipeName} className="flex items-center gap-3 bg-gray-50 px-4 py-3 rounded-2xl">
+                        <div className="flex-1">
+                          <h3 className="text-sm font-medium text-gray-900">{recipeName}</h3>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {recipeLibrary[recipeName].length} ingredients
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => startEditingRecipe(recipeName)}
+                          className="px-4 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm rounded-full hover:bg-gray-50 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Delete "${recipeName}"?`)) {
+                              deleteRecipe(recipeName);
+                            }
+                          }}
+                          className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-red-50"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<ShoppingListApp />);
+  </script>
+</body>
+</html>
